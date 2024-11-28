@@ -299,3 +299,42 @@ deny 203.0.113.100;  # Replace with your test IP
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+### Troubleshooting
+If you encounter issues during installation or configuration, consider the following steps:
+
+### Check Nginx Configuration:
+```
+sudo nginx -t
+```
+Resolve any syntax errors reported before reloading.
+
+#### Review Logs:
+
+   #### Access Logs:
+```
+sudo tail -f /var/log/nginx/access.log
+```
+   #### Error Logs:
+```
+sudo tail -f /var/log/nginx/error.log
+```
+   ### Blocklist Update Logs:
+```
+sudo tail -f /var/log/update_blocklist.log
+```
+### Verify Permissions:
+Ensure all configuration files and scripts have the correct permissions and ownership.
+
+### Ensure PHP-FPM is Running:
+```
+sudo systemctl status php8.3-fpm
+```
+   #### Start or Restart PHP-FPM if necessary:
+   ```
+   sudo systemctl restart php8.3-fpm
+   ```
+### 9. License
+This project is licensed under the MIT License.
+
+### 10. Contact
+For any questions or support, please contact yodabytz@gmail.com
