@@ -60,12 +60,6 @@ Ensure that the error_page directive and custom error page location are correctl
 #### 3.3. Server Block Example
 Here's a sample snippet to include in your server block:
 ```
-server {
-    listen 80;
-    server_name yourdomain.com www.yourdomain.com;
-    root /var/www/yourdomain.com;
-    index index.php index.html index.htm;
-
     # Define custom 403 error page BEFORE including blocklist
     error_page 403 /secuNX_403.php;
 
@@ -82,42 +76,6 @@ server {
 
     # Include SecuNX Blocklist AFTER defining error_page and whitelist
     include /etc/nginx/secuNX/blocklist.conf;
-
-    # Handle PHP scripts
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
-    }
-
-    # Deny access to .htaccess files
-    location ~ /\.ht {
-        deny all;
-    }
-
-    # Main site configuration
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Handle specific URL patterns
-    location ~ ^/([a-zA-Z0-9_-]+)$ {
-        try_files /$1.html =404;
-    }
-
-    # Internal handling for HTML files
-    location ~ \.html$ {
-        internal;
-    }
-
-    # Custom 404 error page
-    error_page 404 /404.html;
-
-    # Serve the custom 404 page
-    location = /404.html {
-        internal;
-        root /var/www/yourdomain.com;
-    }
-}
 ```
 ### 4. Set Up the Whitelist
 Edit the whitelist configuration file to include trusted IP addresses.
