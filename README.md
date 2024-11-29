@@ -15,7 +15,7 @@
 
 Before installing SecuNX, ensure your system meets the following requirements:
 
-- **Operating System:** Ubuntu 20.04 LTS or later.
+- **Operating System:** Linux.
 - **Nginx:** Installed and running.
 - **PHP-FPM:** Installed and configured (version 8.3 recommended).
 - **Root Access:** Required to modify Nginx configurations and install dependencies.
