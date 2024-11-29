@@ -1,9 +1,3 @@
-
----
-
-## 🖥️ install.sh
-
-```bash
 #!/bin/bash
 
 # ----------------------------
@@ -71,8 +65,11 @@ sudo bash -c 'cat > /usr/local/bin/update_blocklist.sh <<EOL
 
 # ----------------------------
 # Script: update_blocklist.sh
-# Purpose: Automatically update Nginx blocklist.conf with malicious IPs
+# Purpose: Automatically update Nginx blocklist.conf with malicious IPs from multiple sources, including Tor exit nodes
 # ----------------------------
+
+# Exit immediately if a command exits with a non-zero status
+set -e
 
 # Configuration
 BLOCKLIST_CONF="/etc/nginx/secuNX/blocklist.conf"
@@ -82,6 +79,7 @@ BACKUP_DIR="/etc/nginx/blocklist_backups"
 ABUSEIPDB_API_KEY="YOUR_ABUSEIPDB_API_KEY"  # Replace with your AbuseIPDB API key
 ABUSEIPDB_THRESHOLD=50  # Minimum number of reports to consider
 ABUSEIPDB_URL="https://api.abuseipdb.com/api/v2/blacklist"
+TOR_EXIT_NODES_URL="https://check.torproject.org/torbulkexitlist"  # URL to fetch Tor exit node IPs
 
 # Whitelisted IPs (same as in whitelist.conf)
 WHITELIST_IPS=(
@@ -133,10 +131,17 @@ fetch_abuseipdb() {
     echo "Fetched \$(wc -l < /tmp/abuseipdb.txt) IPs from AbuseIPDB."
 }
 
+# Function to fetch Tor Exit Nodes
+fetch_tor_exit_nodes() {
+    echo "Fetching Tor Exit Nodes..."
+    curl -s "$TOR_EXIT_NODES_URL" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' > /tmp/tor_exit_nodes.txt
+    echo "Fetched \$(wc -l < /tmp/tor_exit_nodes.txt) Tor Exit Node IPs."
+}
+
 # Function to merge and deduplicate IPs, excluding whitelisted IPs
 merge_blocklists() {
     echo "Merging blocklists and excluding whitelisted IPs..."
-    cat /tmp/blocklist_de.txt /tmp/abuseipdb.txt | sort | uniq > /tmp/merged_blocklist.txt
+    cat /tmp/blocklist_de.txt /tmp/abuseipdb.txt /tmp/tor_exit_nodes.txt | sort | uniq > /tmp/merged_blocklist.txt
 
     # Remove whitelisted IPs
     for ip in "\${WHITELIST_IPS[@]}"; do
@@ -191,22 +196,19 @@ reload_nginx() {
 # Main Execution Flow
 fetch_blocklist_de
 if fetch_abuseipdb; then
-    merge_blocklists
-    format_for_nginx
-    backup_existing_blocklist
-    update_blocklist_conf
-    reload_nginx
+    echo "AbuseIPDB fetch succeeded."
 else
-    echo "AbuseIPDB fetch failed. Proceeding with only Blocklist.de data."
-    merge_blocklists
-    format_for_nginx
-    backup_existing_blocklist
-    update_blocklist_conf
-    reload_nginx
+    echo "AbuseIPDB fetch failed. Proceeding without AbuseIPDB data."
 fi
+fetch_tor_exit_nodes
+merge_blocklists
+format_for_nginx
+backup_existing_blocklist
+update_blocklist_conf
+reload_nginx
 
 # Clean up temporary files
-rm -f /tmp/blocklist_de.txt /tmp/abuseipdb.json /tmp/abuseipdb.txt /tmp/merged_blocklist.txt /tmp/blocklist_temp.conf
+rm -f /tmp/blocklist_de.txt /tmp/abuseipdb.json /tmp/abuseipdb.txt /tmp/tor_exit_nodes.txt /tmp/merged_blocklist.txt /tmp/blocklist_temp.conf
 
 echo "Blocklist update process completed."
 EOL'
@@ -218,7 +220,6 @@ sudo chown root:root /usr/local/bin/update_blocklist.sh
 
 # 8. Create the Custom 403 Error Page
 print_msg "Creating the custom 403 error page..."
-sudo mkdir -p /var/www/secuNX
 sudo bash -c 'cat > /var/www/secuNX/secuNX_403.php <<EOL
 <?php
 // secuNX_403.php
@@ -233,101 +234,9 @@ http_response_code(403);
 \$time_local = date('Y-m-d H:i:s'); // Server's current time
 \$server_id = '15013'; // Static Server ID
 
+// Get the domain name
+\$domain = \$_SERVER['HTTP_HOST'] ?? 'yourdomain.com';
+
 // Block details
 \$block_id = 'BLACK02';
-\$block_reason = 'Your IP address is listed in our blacklist and blocked from completing this request.';
-
-// HTML Content
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Access Denied - SecuNX Website Firewall</title>
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: Arial, sans-serif;
-            color: #333;
-            text-align: center;
-            padding: 50px;
-        }
-        .container {
-            background-color: #ffffff;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            display: inline-block;
-            padding: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        h1 {
-            color: #dc3545;
-            margin-bottom: 20px;
-        }
-        p {
-            font-size: 16px;
-            line-height: 1.5;
-        }
-        .details {
-            background-color: #f1f3f5;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            padding: 15px;
-            margin-top: 20px;
-            text-align: left;
-        }
-        .details strong {
-            display: inline-block;
-            width: 150px;
-        }
-        a {
-            color: #007bff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        footer {
-            margin-top: 30px;
-            font-size: 12px;
-            color: #6c757d;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Access Denied</h1>
-        <h2>SecuNX Website Firewall</h2>
-        <p>If you are the site owner (or you manage this site), please whitelist your IP or if you think this block is an error, please <a href="/support">open a support ticket</a> and make sure to include the block details (displayed below), so we can assist you in troubleshooting the issue.</p>
-        <div class="details">
-            <p><strong>Your IP:</strong> <?php echo htmlspecialchars(\$remote_addr); ?></p>
-            <p><strong>URL:</strong> <?php echo htmlspecialchars(\$request_uri); ?></p>
-            <p><strong>Your Browser:</strong> <?php echo htmlspecialchars(\$user_agent); ?></p>
-            <p><strong>Block ID:</strong> <?php echo htmlspecialchars(\$block_id); ?></p>
-            <p><strong>Block Reason:</strong> <?php echo htmlspecialchars(\$block_reason); ?></p>
-            <p><strong>Time:</strong> <?php echo htmlspecialchars(\$time_local); ?></p>
-            <p><strong>Server ID:</strong> <?php echo htmlspecialchars(\$server_id); ?></p>
-        </div>
-    </div>
-    <footer>
-        &copy; 2024 SecuNX Web Application Firewall
-    </footer>
-</body>
-</html>
-EOL'
-
-# 9. Set Permissions for the Custom 403 Error Page
-print_msg "Setting permissions for the custom 403 error page..."
-sudo chmod 644 /var/www/secuNX/secuNX_403.php
-sudo chown www-data:www-data /var/www/secuNX/secuNX_403.php
-
-# 10. Set Up the Cron Job for Automated Updates
-print_msg "Setting up the cron job for automated blocklist updates..."
-CRON_JOB="0 0 * * * /usr/local/bin/update_blocklist.sh >> /var/log/update_blocklist.log 2>&1"
-(crontab -l 2>/dev/null | grep -v "update_blocklist.sh"; echo "$CRON_JOB") | crontab -
-echo "Cron job added: $CRON_JOB"
-
-# 11. Final Message
-print_msg "Installation complete! Please ensure you manually configure your Nginx server blocks as per the README instructions."
-print_msg "Don't forget to replace 'YOUR_ABUSEIPDB_API_KEY' in /usr/local/bin/update_blocklist.sh with your actual AbuseIPDB API key."
-print_msg "Additionally, review and update the whitelist and blocklist configurations to suit your needs."
+\$block_reason = 'Your IP address is listed in our blacklist
