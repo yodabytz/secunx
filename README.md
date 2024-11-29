@@ -4,7 +4,7 @@
 
 ## 🛡️ Features
 
-- **Automated Blocklist Updates:** Regularly fetches and updates blocklists from reputable sources like Blocklist.de and AbuseIPDB.
+- **Automated Blocklist Updates:** Regularly fetches and updates blocklists from reputable sources like Blocklist.de, AbuseIPDB, and Tor Exit Nodes.
 - **Custom Whitelist:** Allows specific IPs to always have access, overriding any blocklist entries.
 - **Custom 403 Error Page:** Provides informative feedback to blocked users with a tailored error page.
 - **Cron Job Integration:** Ensures blocklists are updated daily without manual intervention.
