@@ -22,6 +22,9 @@ Before installing SecuNX, ensure your system meets the following requirements:
 - **Git:** Installed for cloning the repository.
 - **API Key:** Obtain an API key from [AbuseIPDB](https://www.abuseipdb.com/register) for accessing their blacklist API.
 
+## Screenshot
+<img src="https://raw.githubusercontent.com/yodabytz/secunx/refs/heads/main/secuNX.jpg?raw=true" width="600">
+
 ## 🚀 Installation
 
 Follow the steps below to set up SecuNX on your server.
