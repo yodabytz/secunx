@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ----------------------------
-# Script: install.sh
-# Purpose: Automate the installation of dependencies, configuration files, and permissions for SecuNX Nginx Security Setup
+# Script: install_nginx.sh
+# Purpose: Automate the installation of dependencies, configuration files, and permissions for SecuNX Nginx Security Setup with Mobile-Friendly 403 Error Page
 # ----------------------------
 
 # Exit immediately if a command exits with a non-zero status
@@ -18,13 +18,13 @@ print_msg "Updating system packages..."
 sudo apt update && sudo apt upgrade -y
 
 # 2. Install Required Dependencies
-print_msg "Installing required dependencies (curl, jq, mailutils)..."
-sudo apt install -y curl jq mailutils
+print_msg "Installing required dependencies (nginx, php-fpm, curl, jq, mailutils)..."
+sudo apt install -y nginx php-fpm curl jq mailutils
 
 # 3. Create Necessary Directories
 print_msg "Creating necessary directories..."
 sudo mkdir -p /etc/nginx/secuNX
-sudo mkdir -p /etc/nginx/blocklist_backups
+sudo mkdir -p /etc/nginx/secuNX/blocklist_backups
 sudo mkdir -p /var/www/secuNX
 
 # 4. Create Whitelist Configuration File
@@ -72,7 +72,7 @@ sudo bash -c 'cat > /usr/local/bin/update_blocklist.sh <<EOL
 BLOCKLIST_CONF="/etc/nginx/secuNX/blocklist.conf"
 WHITELIST_CONF="/etc/nginx/secuNX/whitelist.conf"
 TEMP_BLOCKLIST="/tmp/blocklist_temp.conf"
-BACKUP_DIR="/etc/nginx/blocklist_backups"
+BACKUP_DIR="/etc/nginx/secuNX/blocklist_backups"
 ABUSEIPDB_API_KEY="YOUR_ABUSEIPDB_API_KEY"  # Replace with your AbuseIPDB API key
 ABUSEIPDB_THRESHOLD=50  # Minimum number of reports to consider
 ABUSEIPDB_URL="https://api.abuseipdb.com/api/v2/blacklist"
@@ -142,7 +142,7 @@ merge_blocklists() {
 
     # Remove whitelisted IPs
     for ip in "\${WHITELIST_IPS[@]}"; do
-        grep -v "^\$ip\$" /tmp/merged_blocklist.txt > /tmp/merged_blocklist_tmp.txt
+        grep -v "^$ip\$" /tmp/merged_blocklist.txt > /tmp/merged_blocklist_tmp.txt
         mv /tmp/merged_blocklist_tmp.txt /tmp/merged_blocklist.txt
     done
 
@@ -152,20 +152,20 @@ merge_blocklists() {
 # Function to format IPs for Nginx
 format_for_nginx() {
     echo "Formatting IPs for Nginx..."
-    awk '{print "deny " \$1 ";"}' /tmp/merged_blocklist.txt > "\$TEMP_BLOCKLIST"
+    awk '"'"'{print "deny " $1 ";"}'"'"' /tmp/merged_blocklist.txt > "$TEMP_BLOCKLIST"
 }
 
 # Function to backup existing blocklist
 backup_existing_blocklist() {
     TIMESTAMP=\$(date +%F_%T)
     echo "Backing up existing blocklist.conf to \$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak"
-    cp "\$BLOCKLIST_CONF" "\$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak"
+    cp "$BLOCKLIST_CONF" "$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak"
 }
 
 # Function to update blocklist.conf
 update_blocklist_conf() {
     echo "Updating blocklist.conf..."
-    cp "\$TEMP_BLOCKLIST" "\$BLOCKLIST_CONF"
+    cp "$TEMP_BLOCKLIST" "$BLOCKLIST_CONF"
     echo "blocklist.conf updated successfully."
 }
 
@@ -179,13 +179,13 @@ reload_nginx() {
             echo "Nginx reloaded successfully."
         else
             echo "Nginx reload failed. Restoring from backup."
-            cp "\$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak" "\$BLOCKLIST_CONF"
+            cp "\$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak" "$BLOCKLIST_CONF"
             systemctl reload nginx
             exit 1
         fi
     else
         echo "Nginx configuration test failed. Restoring from backup."
-        cp "\$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak" "\$BLOCKLIST_CONF"
+        cp "\$BACKUP_DIR/blocklist.conf.\$TIMESTAMP.bak" "$BLOCKLIST_CONF"
         exit 1
     fi
 }
@@ -210,13 +210,13 @@ rm -f /tmp/blocklist_de.txt /tmp/abuseipdb.json /tmp/abuseipdb.txt /tmp/tor_exit
 echo "Blocklist update process completed."
 EOL'
 
-# 7. Secure the Update Script
+# 7. Secure the Blocklist Update Script
 print_msg "Securing the blocklist update script..."
 sudo chmod 700 /usr/local/bin/update_blocklist.sh
 sudo chown root:root /usr/local/bin/update_blocklist.sh
 
-# 8. Create the Custom 403 Error Page
-print_msg "Creating the custom 403 error page..."
+# 8. Create the Custom 403 Error Page with Updated Responsive CSS
+print_msg "Creating the custom 403 error page with updated responsive design..."
 sudo bash -c 'cat > /var/www/secuNX/secuNX_403.php <<EOL
 <?php
 // secuNX_403.php
@@ -228,8 +228,8 @@ http_response_code(403);
 \$remote_addr = \$_SERVER['REMOTE_ADDR'] ?? 'N/A';
 \$request_uri = \$_SERVER['REQUEST_URI'] ?? 'N/A';
 \$user_agent = \$_SERVER['HTTP_USER_AGENT'] ?? 'N/A';
-\$time_local = date('Y-m-d H:i:s'); // Server's current time
-\$server_id = 'vibrix2024'; // No server ID needed
+\$time_local = date('Y-m-d H:i:s'); // Server\'s current time
+\$server_id = 'vibrix2024'; // Server ID
 \$domain = \$_SERVER['HTTP_HOST'] ?? 'N/A';
 
 // Generate a random Block ID
@@ -243,77 +243,109 @@ http_response_code(403);
 <!DOCTYPE html>
 <html lang="en">
 <head>
-   <meta charset="UTF-8">
-   <title>Access Denied - SecuNX Website Firewall</title>
-   <style>
-       body {
-           background-color: #f8f9fa;
-           font-family: Arial, sans-serif;
-           color: #333;
-           text-align: center;
-           padding: 50px;
-       }
-       .container {
-           max-width: 800px;
-           background-color: #ffffff;
-           border: 1px solid #dee2e6;
-           border-radius: 8px;
-           display: inline-block;
-           padding: 30px;
-           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-       }
-       h1 {
-           color: #dc3545;
-           margin-bottom: 20px;
-       }
-       p {
-           font-size: 16px;
-           line-height: 1.5;
-       }
-       .details {
-           background-color: #f1f3f5;
-           border: 1px solid #ced4da;
-           border-radius: 4px;
-           padding: 15px;
-           margin-top: 20px;
-           text-align: left;
-       }
-       .details strong {
-           display: inline-block;
-           width: 150px;
-       }
-       a {
-           color: #007bff;
-           text-decoration: none;
-       }
-       a:hover {
-           text-decoration: underline;
-       }
-       footer {
-           margin-top: 30px;
-           font-size: 12px;
-           color: #6c757d;
-       }
-   </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access Denied - SecuNX Website Firewall</title>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: Arial, sans-serif;
+            color: #333;
+            text-align: center;
+            padding: 20px;
+        }
+        .container {
+            background-color: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            display: inline-block;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 {
+            color: #dc3545;
+            margin-bottom: 15px;
+            font-size: 24px;
+        }
+        h2 {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        p {
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .details {
+            background-color: #f1f3f5;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 15px;
+            text-align: left;
+            font-size: 14px;
+        }
+        .details strong {
+            display: inline-block;
+            width: 120px;
+            /* Ensure font size matches body text */
+            font-size: 14px;
+        }
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+                width: 90%;
+            }
+            h1 {
+                font-size: 20px;
+            }
+            h2 {
+                font-size: 18px;
+            }
+            p, .details {
+                font-size: 14px !important;
+            }
+            .details strong {
+                width: 100px;
+                /* Remove font-size adjustment to match body text */
+                font-size: 14px !important;
+            }
+        }
+    </style>
 </head>
 <body>
-   <div class="container">
-       <h1>Access Denied</h1>
-       <h2>SecuNX Website Firewall</h2>
-       <p>If you are the site owner (or you manage this site), please whitelist your IP or if you think this block is an error, please <a href="http://support.vibrixmedia.com">open a support ticket</a> and make sure to include the block details (displayed below), so we can assist you in troubleshooting the issue.</p>
-       <div class="details">
-           <p><strong>Your IP:</strong> <?php echo htmlspecialchars(\$remote_addr); ?></p>
-           <p><strong>URL:</strong> <?php echo htmlspecialchars("https://\$domain\$request_uri"); ?></p>
-           <p><strong>Your Browser:</strong> <?php echo htmlspecialchars(\$user_agent); ?></p>
-           <p><strong>Block ID:</strong> <?php echo htmlspecialchars(\$block_id); ?></p>
-           <p><strong>Block Reason:</strong> <?php echo htmlspecialchars(\$block_reason); ?></p>
-           <p><strong>Time:</strong> <?php echo htmlspecialchars(\$time_local); ?></p>
-           <p><strong>Server ID:</strong> <?php echo htmlspecialchars(\$server_id); ?></p>
-       </div>
-   </div>
-   <footer>
-       &copy; 2024 SecuNX Web Application Firewall
-   </footer>
+    <div class="container">
+        <h1>Access Denied</h1>
+        <h2>SecuNX Website Firewall</h2>
+        <p>If you are the site owner (or you manage this site), please whitelist your IP or if you think this block is an error, please <a href="http://support.vibrixmedia.com">open a support ticket</a> and make sure to include the block details (displayed below), so we can assist you in troubleshooting the issue.</p>
+        <div class="details">
+            <p><strong>Your IP:</strong> <?php echo htmlspecialchars(\$remote_addr); ?></p>
+            <p><strong>URL:</strong> <?php echo htmlspecialchars("https://\$domain\$request_uri"); ?></p>
+            <p><strong>Your Browser:</strong> <?php echo htmlspecialchars(\$user_agent); ?></p>
+            <p><strong>Block ID:</strong> <?php echo htmlspecialchars(\$block_id); ?></p>
+            <p><strong>Block Reason:</strong> <?php echo htmlspecialchars(\$block_reason); ?></p>
+            <p><strong>Time:</strong> <?php echo htmlspecialchars(\$time_local); ?></p>
+            <p><strong>Server ID:</strong> <?php echo htmlspecialchars(\$server_id); ?></p>
+        </div>
+    </div>
+    <footer>
+        &copy; 2024 SecuNX Web Application Firewall
+    </footer>
 </body>
 </html>
 EOL'
@@ -330,6 +362,63 @@ CRON_JOB="0 0 * * * /usr/local/bin/update_blocklist.sh >> /var/log/update_blockl
 echo "Cron job added: $CRON_JOB"
 
 # 11. Final Message
-print_msg "Installation complete! Please ensure you manually configure your Nginx server blocks as per the README instructions."
-print_msg "Don't forget to replace 'YOUR_ABUSEIPDB_API_KEY' in /usr/local/bin/update_blocklist.sh with your actual AbuseIPDB API key."
-print_msg "Additionally, review and update the whitelist and blocklist configurations to suit your needs."
+print_msg "Installation complete! Please ensure you manually configure your Nginx server blocks as follows:
+
+1. **Include Whitelist and Blocklist:**
+
+Within your server block, include the whitelist and blocklist configurations:
+
+\`\`\`nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    root /var/www/secuNX;
+
+    # Custom 403 Error Page
+    error_page 403 /secuNX_403.php;
+
+    location / {
+        # Whitelist Configuration
+        include /etc/nginx/secuNX/whitelist.conf;
+
+        # Blocklist Configuration
+        include /etc/nginx/secuNX/blocklist.conf;
+
+        # Try to serve the requested file, otherwise deny access
+        try_files \$uri \$uri/ =403;
+
+        # PHP Handling
+        location ~ \.php$ {
+            include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/run/php/php8.3-fpm.sock;  # Adjust PHP version if necessary
+        }
+    }
+
+    # Serve the custom 403 error page
+    location = /secuNX_403.php {
+        internal;
+        root /var/www/secuNX;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;  # Adjust PHP version if necessary
+        fastcgi_index secuNX_403.php;
+        fastcgi_param SCRIPT_FILENAME /var/www/secuNX/secuNX_403.php;
+        include fastcgi_params;
+    }
+
+    # Other configurations...
+}
+\`\`\`
+
+2. **Replace Placeholders:**
+
+- **\`yourdomain.com\`**: Replace with your actual domain name.
+- **\`YOUR_ABUSEIPDB_API_KEY\`**: Replace with your actual AbuseIPDB API key in \`/usr/local/bin/update_blocklist.sh\`.
+- **\`YOUR.TOR.IP.ADDRESS\`**: Replace with actual Tor exit node IPs in \`/etc/nginx/secuNX/blocklist.conf\` or automate its update via the script.
+
+3. **Reload Nginx:**
+
+After configuring the server blocks, test and reload Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
