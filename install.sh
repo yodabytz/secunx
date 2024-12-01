@@ -318,12 +318,12 @@ http_response_code(403);
                 font-size: 18px;
             }
             p, .details {
-                font-size: 14px !important;
+                font-size: 10px !important;
             }
             .details strong {
                 width: 100px;
                 /* Remove font-size adjustment to match body text */
-                font-size: 14px !important;
+                font-size: 10px !important;
             }
         }
     </style>
