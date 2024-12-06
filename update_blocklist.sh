@@ -1,97 +1,150 @@
-<?php
-// secuNX_403.php
+#!/bin/bash
 
-// Set the response status code to 403 Forbidden
-http_response_code(403);
+# ----------------------------
+# Script: update_blocklist.sh
+# Purpose: Automatically update Nginx blocklist.conf with malicious IPs from multiple sources, including Tor exit nodes
+# ----------------------------
 
-// Gather necessary information
-$remote_addr = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
-$request_uri = $_SERVER['REQUEST_URI'] ?? 'N/A';
-$user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'N/A';
-$time_local = date('Y-m-d H:i:s'); // Server's current time
-$server_id = 'server1'; // Put a unique serverID here
-$domain = $_SERVER['HTTP_HOST'] ?? 'N/A';
+# Exit immediately if a command exits with a non-zero status
+set -e
 
-// Generate a random Block ID
-$block_id = 'BLOCK' . strtoupper(substr(md5(uniqid()), 0, 6));
+# Configuration
+BLOCKLIST_CONF="/etc/nginx/secuNX/blocklist.conf"
+WHITELIST_CONF="/etc/nginx/secuNX/whitelist.conf"
+TEMP_BLOCKLIST="/tmp/blocklist_temp.conf"
+BACKUP_DIR="/etc/nginx/secuNX/blocklist_backups"
+ABUSEIPDB_API_KEY="YOUR_ABUSEIPDB_API_KEY"  # Replace with your AbuseIPDB API key
+ABUSEIPDB_THRESHOLD=50  # Minimum number of reports to consider
+ABUSEIPDB_URL="https://api.abuseipdb.com/api/v2/blacklist"
+TOR_EXIT_NODES_URL="https://check.torproject.org/torbulkexitlist"  # URL to fetch Tor exit node IPs
 
-// Block details
-$block_reason = 'Your IP address is listed in our blacklist and blocked from completing this request.';
+# Whitelisted IPs (same as in whitelist.conf)
+WHITELIST_IPS=(
+    "127.0.0.1"
+    "::1"
+    "203.0.113.5"
+    "198.51.100.10"
+    # Add more whitelisted IPs as needed
+)
 
-// HTML Content
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Access Denied - SecuNX Website Firewall</title>
-    <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: Arial, sans-serif;
-            color: #333;
-            text-align: center;
-            padding: 50px;
-        }
-        .container {
-            background-color: #ffffff;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            display: inline-block;
-            padding: 30px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        h1 {
-            color: #dc3545;
-            margin-bottom: 20px;
-        }
-        p {
-            font-size: 16px;
-            line-height: 1.5;
-        }
-        .details {
-            background-color: #f1f3f5;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-            padding: 15px;
-            margin-top: 20px;
-            text-align: left;
-        }
-        .details strong {
-            display: inline-block;
-            width: 150px;
-        }
-        a {
-            color: #007bff;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
-        footer {
-            margin-top: 30px;
-            font-size: 12px;
-            color: #6c757d;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Access Denied</h1>
-        <h2>SecuNX Website Firewall</h2>
-        <p>If you are the site owner (or you manage this site), please whitelist your IP or if you think this block is an error, please <a href="http://support.vibrixmedia.com">open a support ticket</a> and make sure to include the block details (displayed below), so we can assist you in troubleshooting the issue.</p>
-        <div class="details">
-            <p><strong>Your IP:</strong> <?php echo htmlspecialchars($remote_addr); ?></p>
-            <p><strong>URL:</strong> <?php echo htmlspecialchars("https://$domain$request_uri"); ?></p>
-            <p><strong>Your Browser:</strong> <?php echo htmlspecialchars($user_agent); ?></p>
-            <p><strong>Block ID:</strong> <?php echo htmlspecialchars($block_id); ?></p>
-            <p><strong>Block Reason:</strong> <?php echo htmlspecialchars($block_reason); ?></p>
-            <p><strong>Time:</strong> <?php echo htmlspecialchars($time_local); ?></p>
-            <p><strong>Server ID:</strong> <?php echo htmlspecialchars($server_id); ?></p>
-        </div>
-    </div>
-    <footer>
-        &copy; 2024 SecuNX Web Application Firewall
-    </footer>
-</body>
-</html>
+# URLs of blocklists to fetch
+BLOCKLIST_DE_URL="https://lists.blocklist.de/lists/all.txt"
+
+# Create backup directory if it doesn't exist
+mkdir -p "$BACKUP_DIR"
+
+# Function to fetch Blocklist.de
+fetch_blocklist_de() {
+    echo "Fetching Blocklist.de..."
+    curl -s "$BLOCKLIST_DE_URL" | grep -v '^#' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' > /tmp/blocklist_de.txt
+    echo "Fetched $(wc -l < /tmp/blocklist_de.txt) IPs from Blocklist.de."
+}
+
+# Function to fetch AbuseIPDB
+fetch_abuseipdb() {
+    echo "Fetching AbuseIPDB..."
+    RESPONSE=$(curl -s -G "$ABUSEIPDB_URL" \
+        --data-urlencode "maxAgeInDays=90" \
+        --data-urlencode "confidenceMinimum=$ABUSEIPDB_THRESHOLD" \
+        -H "Key: $ABUSEIPDB_API_KEY" \
+        -H "Accept: application/json")
+
+    # Save the response to a file
+    echo "$RESPONSE" > /tmp/abuseipdb.json
+
+    # Check if 'data' exists and is not null
+    DATA_EXISTS=$(echo "$RESPONSE" | jq '.data // empty')
+
+    if [ -z "$DATA_EXISTS" ]; then
+        # Extract error message if available
+        ERROR_MESSAGE=$(echo "$RESPONSE" | jq -r '.errors[0].detail // .meta.error // "Unknown error"')
+        echo "Error fetching AbuseIPDB: $ERROR_MESSAGE"
+        # Exit the script or decide to proceed without AbuseIPDB data
+        return 1
+    fi
+
+    # Extract IPs
+    jq -r '.data[] | .ipAddress' /tmp/abuseipdb.json > /tmp/abuseipdb.txt
+    echo "Fetched $(wc -l < /tmp/abuseipdb.txt) IPs from AbuseIPDB."
+}
+
+# Function to fetch Tor Exit Nodes
+fetch_tor_exit_nodes() {
+    echo "Fetching Tor Exit Nodes..."
+    curl -s "$TOR_EXIT_NODES_URL" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' > /tmp/tor_exit_nodes.txt
+    echo "Fetched $(wc -l < /tmp/tor_exit_nodes.txt) Tor Exit Node IPs."
+}
+
+# Function to merge and deduplicate IPs, excluding whitelisted IPs
+merge_blocklists() {
+    echo "Merging blocklists and excluding whitelisted IPs..."
+    cat /tmp/blocklist_de.txt /tmp/abuseipdb.txt /tmp/tor_exit_nodes.txt | sort | uniq > /tmp/merged_blocklist.txt
+
+    # Remove whitelisted IPs
+    for ip in "${WHITELIST_IPS[@]}"; do
+        grep -v "^$ip\$" /tmp/merged_blocklist.txt > /tmp/merged_blocklist_tmp.txt
+        mv /tmp/merged_blocklist_tmp.txt /tmp/merged_blocklist.txt
+    done
+
+    echo "Total unique IPs after excluding whitelisted IPs: $(wc -l < /tmp/merged_blocklist.txt)"
+}
+
+# Function to format IPs for Nginx
+format_for_nginx() {
+    echo "Formatting IPs for Nginx..."
+    awk '{print "deny " $1 ";"}' /tmp/merged_blocklist.txt > "$TEMP_BLOCKLIST"
+}
+
+# Function to backup existing blocklist
+backup_existing_blocklist() {
+    TIMESTAMP=$(date +%F_%T)
+    echo "Backing up existing blocklist.conf to $BACKUP_DIR/blocklist.conf.$TIMESTAMP.bak"
+    cp "$BLOCKLIST_CONF" "$BACKUP_DIR/blocklist.conf.$TIMESTAMP.bak"
+}
+
+# Function to update blocklist.conf
+update_blocklist_conf() {
+    echo "Updating blocklist.conf..."
+    cp "$TEMP_BLOCKLIST" "$BLOCKLIST_CONF"
+    echo "blocklist.conf updated successfully."
+}
+
+# Function to reload Nginx
+reload_nginx() {
+    echo "Reloading Nginx to apply changes..."
+    nginx -t
+    if [ $? -eq 0 ]; then
+        systemctl reload nginx
+        if [ $? -eq 0 ]; then
+            echo "Nginx reloaded successfully."
+        else
+            echo "Nginx reload failed. Restoring from backup."
+            cp "$BACKUP_DIR/blocklist.conf.$TIMESTAMP.bak" "$BLOCKLIST_CONF"
+            systemctl reload nginx
+            exit 1
+        fi
+    else
+        echo "Nginx configuration test failed. Restoring from backup."
+        cp "$BACKUP_DIR/blocklist.conf.$TIMESTAMP.bak" "$BLOCKLIST_CONF"
+        exit 1
+    fi
+}
+
+# Main Execution Flow
+fetch_blocklist_de
+if fetch_abuseipdb; then
+    echo "AbuseIPDB fetch succeeded."
+else
+    echo "AbuseIPDB fetch failed. Proceeding without AbuseIPDB data."
+fi
+fetch_tor_exit_nodes
+merge_blocklists
+format_for_nginx
+backup_existing_blocklist
+update_blocklist_conf
+reload_nginx
+
+# Clean up temporary files
+rm -f /tmp/blocklist_de.txt /tmp/abuseipdb.json /tmp/abuseipdb.txt /tmp/tor_exit_nodes.txt /tmp/merged_blocklist.txt /tmp/blocklist_temp.conf
+
+echo "Blocklist update process completed."
