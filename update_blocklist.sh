@@ -3,6 +3,7 @@
 # ----------------------------
 # Script: update_blocklist.sh
 # Purpose: Automatically update Nginx blocklist.conf with malicious IPs from multiple sources, including Tor exit nodes
+#          and clean up backup files older than 1 month.
 # ----------------------------
 
 # Exit immediately if a command exits with a non-zero status
@@ -130,6 +131,13 @@ reload_nginx() {
     fi
 }
 
+# Function to clean up old backups older than 1 month
+cleanup_old_backups() {
+    echo "Cleaning up backup files older than 1 month..."
+    find "$BACKUP_DIR" -type f -name "blocklist.conf.*.bak" -mtime +30 -exec rm -f {} \;
+    echo "Old backup files deleted."
+}
+
 # Main Execution Flow
 fetch_blocklist_de
 if fetch_abuseipdb; then
@@ -143,6 +151,7 @@ format_for_nginx
 backup_existing_blocklist
 update_blocklist_conf
 reload_nginx
+cleanup_old_backups
 
 # Clean up temporary files
 rm -f /tmp/blocklist_de.txt /tmp/abuseipdb.json /tmp/abuseipdb.txt /tmp/tor_exit_nodes.txt /tmp/merged_blocklist.txt /tmp/blocklist_temp.conf
